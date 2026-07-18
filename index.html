@@ -2,41 +2,96 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Dash Runner</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="game-wrap">
     <header class="hud">
-      <div class="hud-item">
-        <span class="hud-label">Score</span>
-        <span id="score" class="hud-value">0</span>
+      <div class="hud-stats">
+        <div class="hud-item">
+          <span class="hud-label">Score</span>
+          <span id="score" class="hud-value">0</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">Best</span>
+          <span id="high-score" class="hud-value">0</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">Combo</span>
+          <span id="combo" class="hud-value">×1</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">Stage</span>
+          <span id="level" class="hud-value">1</span>
+        </div>
       </div>
-      <div class="hud-item">
-        <span class="hud-label">Best</span>
-        <span id="high-score" class="hud-value">0</span>
+      <div class="hud-controls">
+        <button id="mute-btn" class="icon-btn" aria-label="Toggle sound" title="Toggle sound">🔊</button>
+        <button id="pause-btn" class="icon-btn" aria-label="Pause" title="Pause">⏸</button>
       </div>
     </header>
 
-    <div class="canvas-frame">
+    <div class="canvas-frame" id="canvas-frame">
       <canvas id="game" width="800" height="320"></canvas>
+      <div id="flash" class="flash"></div>
 
       <div id="start-screen" class="overlay">
         <h1>Dash Runner</h1>
-        <p>Jump over obstacles. Duck under the flying ones.</p>
+        <p>Jump over obstacles. Duck under the flying ones. Chain coins for combo bonuses.</p>
+        <p class="best-preview">Best Score: <span id="start-best">0</span></p>
         <div class="keys">
           <span class="key">Space</span> / <span class="key">↑</span> Jump &nbsp;•&nbsp;
           <span class="key">↓</span> Duck
         </div>
+
+        <div id="daily-card" class="daily-card">
+          <div class="daily-header">
+            <span>📅 Today's Challenge</span>
+            <span id="daily-streak" class="streak-badge hidden">🔥 0</span>
+          </div>
+          <div id="daily-label" class="daily-label">Loading…</div>
+          <div class="daily-progress-track">
+            <div id="daily-progress-fill" class="daily-progress-fill"></div>
+          </div>
+          <div id="daily-status" class="daily-status"></div>
+        </div>
+
+        <div id="achievements" class="achievements"></div>
         <button id="start-btn" class="btn">Play</button>
       </div>
 
+      <div id="pause-screen" class="overlay hidden">
+        <h1>Paused</h1>
+        <button id="resume-btn" class="btn">Resume</button>
+      </div>
+
       <div id="game-over-screen" class="overlay hidden">
-        <h1>Game Over</h1>
-        <p id="final-score">Score: 0</p>
-        <p id="new-best" class="new-best hidden">New Best Score!</p>
-        <button id="restart-btn" class="btn">Restart</button>
+        <h1 id="gameover-title">Game Over</h1>
+
+        <div class="score-tally">
+          <span id="final-score-value">0</span>
+          <span id="score-delta" class="score-delta"></span>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-cell"><span class="stat-label">Coins</span><span id="stat-coins" class="stat-value">0</span></div>
+          <div class="stat-cell"><span class="stat-label">Best Combo</span><span id="stat-combo" class="stat-value">×1</span></div>
+          <div class="stat-cell"><span class="stat-label">Stage</span><span id="stat-stage" class="stat-value">1</span></div>
+          <div class="stat-cell"><span class="stat-label">Near-misses</span><span id="stat-nearmiss" class="stat-value">0</span></div>
+        </div>
+
+        <div id="daily-result" class="daily-result hidden"></div>
+        <div id="unlocked-list" class="unlocked-list hidden"></div>
+        <p id="motivation-line" class="motivation-line"></p>
+
+        <button id="restart-btn" class="btn">Play Again</button>
+      </div>
+
+      <div id="touch-controls" class="touch-controls">
+        <button id="touch-duck" class="touch-btn touch-btn-duck" aria-label="Duck">⬇</button>
+        <button id="touch-jump" class="touch-btn touch-btn-jump" aria-label="Jump">⬆</button>
       </div>
     </div>
 
