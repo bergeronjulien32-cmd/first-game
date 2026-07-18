@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dash Runner</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="game-wrap">
+    <header class="hud">
+      <div class="hud-item">
+        <span class="hud-label">Score</span>
+        <span id="score" class="hud-value">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Best</span>
+        <span id="high-score" class="hud-value">0</span>
+      </div>
+    </header>
+
+    <div class="canvas-frame">
+      <canvas id="game" width="800" height="320"></canvas>
+
+      <div id="start-screen" class="overlay">
+        <h1>Dash Runner</h1>
+        <p>Jump over obstacles. Duck under the flying ones.</p>
+        <div class="keys">
+          <span class="key">Space</span> / <span class="key">↑</span> Jump &nbsp;•&nbsp;
+          <span class="key">↓</span> Duck
+        </div>
+        <button id="start-btn" class="btn">Play</button>
+      </div>
+
+      <div id="game-over-screen" class="overlay hidden">
+        <h1>Game Over</h1>
+        <p id="final-score">Score: 0</p>
+        <p id="new-best" class="new-best hidden">New Best Score!</p>
+        <button id="restart-btn" class="btn">Restart</button>
+      </div>
+    </div>
+
+    <p class="hint">Tap / click the game, press <span class="key">Space</span> to jump, <span class="key">↓</span> to duck.</p>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
