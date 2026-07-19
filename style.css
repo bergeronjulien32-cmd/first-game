@@ -15,6 +15,7 @@
 
 html, body {
   height: 100%;
+  overscroll-behavior: none;
 }
 
 body {
@@ -27,6 +28,7 @@ body {
   background: radial-gradient(circle at top, var(--bg-top), var(--bg-bottom));
   color: var(--text);
   padding: 24px;
+  touch-action: manipulation;
 }
 
 .game-wrap {
@@ -120,6 +122,7 @@ body {
   align-items: center;
   justify-content: center;
   transition: transform 0.12s ease, background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .icon-btn:hover {
@@ -146,6 +149,7 @@ canvas {
   width: 100%;
   height: auto;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .overlay {
@@ -461,6 +465,7 @@ canvas {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .touch-btn-duck {
@@ -506,6 +511,7 @@ canvas {
   cursor: pointer;
   box-shadow: 0 8px 20px rgba(94, 234, 212, 0.25);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn:hover {
@@ -597,5 +603,15 @@ canvas {
   }
   .hud-label {
     font-size: 7px;
+  }
+}
+
+/* CSS-level fallback alongside the JS prefersReducedMotion checks */
+@media (prefers-reduced-motion: reduce) {
+  .canvas-frame.shake {
+    animation: none;
+  }
+  .overlay.celebrate h1 {
+    animation: none;
   }
 }

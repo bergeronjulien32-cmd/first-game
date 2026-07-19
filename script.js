@@ -2,9 +2,24 @@
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
 
-  const W = canvas.width;
-  const H = canvas.height;
+  // logical game resolution — kept fixed regardless of the physical backing store
+  const W = 800;
+  const H = 320;
   const GROUND_Y = H - 50;
+
+  // ---- high-DPI backing store: render crisply without touching game-logic coordinates ----
+  function setupCanvasResolution() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  setupCanvasResolution();
+  let resolutionResizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resolutionResizeTimer);
+    resolutionResizeTimer = setTimeout(setupCanvasResolution, 150);
+  });
 
   const scoreEl = document.getElementById("score");
   const highScoreEl = document.getElementById("high-score");
@@ -46,6 +61,25 @@
   const DAILY_COMPLETED_KEY = "dashRunnerDailyCompleted";
   const DAILY_BEST_KEY = "dashRunnerDailyBest";
 
+  // localStorage can throw (Safari private mode, sandboxed iframes, storage-blocked
+  // mobile browsers) — fall back to an in-memory map so the game degrades instead of crashing
+  const memoryStorage = {};
+  function storageGet(key, fallback = null) {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? fallback : v;
+    } catch {
+      return key in memoryStorage ? memoryStorage[key] : fallback;
+    }
+  }
+  function storageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      memoryStorage[key] = value;
+    }
+  }
+
   const STAND_HEIGHT = 50;
   const DUCK_HEIGHT = 30;
   const PLAYER_X = 90;
@@ -70,6 +104,7 @@
   const isTouchDevice = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
   if (isTouchDevice) touchControls.classList.add("enabled");
   const isNarrowScreen = window.innerWidth < 480;
+  const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const MAX_PARTICLES = isNarrowScreen ? 55 : 110;
   const STAR_COUNT = isNarrowScreen ? 22 : 40;
 
@@ -109,7 +144,7 @@
     const KEY = "dashRunnerAchievements";
     let unlocked;
     try {
-      unlocked = new Set(JSON.parse(localStorage.getItem(KEY) || "[]"));
+      unlocked = new Set(JSON.parse(storageGet(KEY, "[]")));
     } catch {
       unlocked = new Set();
     }
@@ -126,7 +161,7 @@
             newly.push(a);
           }
         }
-        if (newly.length) localStorage.setItem(KEY, JSON.stringify([...unlocked]));
+        if (newly.length) storageSet(KEY, JSON.stringify([...unlocked]));
         return newly;
       },
     };
@@ -153,7 +188,7 @@
   // ---- lifetime stats (best-ever single-run values, drive achievement progress) ----
   function loadLifetimeStats() {
     try {
-      const raw = JSON.parse(localStorage.getItem(LIFETIME_KEY) || "{}");
+      const raw = JSON.parse(storageGet(LIFETIME_KEY, "{}"));
       return {
         bestCoinsInRun: raw.bestCoinsInRun || 0,
         bestComboInRun: raw.bestComboInRun || 0,
@@ -179,7 +214,7 @@
     lifetime.bestCoinsInRun = Math.max(lifetime.bestCoinsInRun, runStats.coins);
     lifetime.bestComboInRun = Math.max(lifetime.bestComboInRun, runStats.maxCombo);
     lifetime.bestSurvivalInRun = Math.max(lifetime.bestSurvivalInRun, runStats.time);
-    localStorage.setItem(LIFETIME_KEY, JSON.stringify(lifetime));
+    storageSet(LIFETIME_KEY, JSON.stringify(lifetime));
     return lifetime;
   }
 
@@ -237,14 +272,14 @@
 
   function loadDailyCompleted() {
     try {
-      return JSON.parse(localStorage.getItem(DAILY_COMPLETED_KEY) || "{}");
+      return JSON.parse(storageGet(DAILY_COMPLETED_KEY, "{}"));
     } catch {
       return {};
     }
   }
 
   function saveDailyCompleted(map) {
-    localStorage.setItem(DAILY_COMPLETED_KEY, JSON.stringify(map));
+    storageSet(DAILY_COMPLETED_KEY, JSON.stringify(map));
   }
 
   function computeStreak(completedMap, todayStr) {
@@ -259,7 +294,7 @@
 
   function getDailyBestToday() {
     try {
-      const raw = JSON.parse(localStorage.getItem(DAILY_BEST_KEY) || "{}");
+      const raw = JSON.parse(storageGet(DAILY_BEST_KEY, "{}"));
       return raw.dateStr === todayString() ? raw.value : 0;
     } catch {
       return 0;
@@ -269,7 +304,7 @@
   function updateDailyBestToday(value) {
     const current = getDailyBestToday();
     const next = Math.max(current, value);
-    localStorage.setItem(DAILY_BEST_KEY, JSON.stringify({ dateStr: todayString(), value: next }));
+    storageSet(DAILY_BEST_KEY, JSON.stringify({ dateStr: todayString(), value: next }));
     return next;
   }
 
@@ -294,7 +329,7 @@
   // ---- sound (Web Audio API, no external files) ----
   const Sound = (() => {
     let ctx = null;
-    let muted = localStorage.getItem(MUTE_KEY) === "1";
+    let muted = storageGet(MUTE_KEY) === "1";
 
     function getCtx() {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -328,7 +363,7 @@
       isMuted() { return muted; },
       toggleMute() {
         muted = !muted;
-        localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+        storageSet(MUTE_KEY, muted ? "1" : "0");
         return muted;
       },
       jump() { tone({ freq: 380, glideTo: 640, duration: 0.12, type: "square", gain: 0.15 }); },
@@ -359,7 +394,7 @@
   })();
 
   function vibrate(ms) {
-    if (navigator.vibrate) navigator.vibrate(ms);
+    if (!prefersReducedMotion && navigator.vibrate) navigator.vibrate(ms);
   }
 
   let state = "ready"; // ready | playing | paused | hitstop | over
@@ -424,11 +459,11 @@
   }
 
   function getHighScore() {
-    return Number(localStorage.getItem(HIGH_SCORE_KEY) || 0);
+    return Number(storageGet(HIGH_SCORE_KEY, 0));
   }
 
   function setHighScore(v) {
-    localStorage.setItem(HIGH_SCORE_KEY, String(v));
+    storageSet(HIGH_SCORE_KEY, String(v));
   }
 
   function updateHud() {
@@ -655,6 +690,17 @@
     player.ducking = active && player.onGround;
     player.height = player.ducking ? DUCK_HEIGHT : STAND_HEIGHT;
     player.y = GROUND_Y - player.height;
+  }
+
+  // bypasses the "playing" guard above — used when focus is lost mid-input so a
+  // missed keyup (e.g. from alt-tabbing) can't leave the player stuck ducking/floating
+  function forceReleaseInputs() {
+    if (!player) return;
+    player.ducking = false;
+    player.height = STAND_HEIGHT;
+    player.y = GROUND_Y - player.height;
+    player.jumpHeld = false;
+    player.jumpBufferTimer = 0;
   }
 
   function breakCombo() {
@@ -1161,6 +1207,18 @@
     else if (state === "paused") resumeGame();
   }
 
+  // losing window/tab focus mid-run can eat the keyup that would normally release
+  // duck/jump, so release inputs first and then pause via the existing pause flow
+  function pauseForFocusLoss() {
+    if (state !== "playing") return;
+    forceReleaseInputs();
+    pauseGame();
+  }
+  window.addEventListener("blur", pauseForFocusLoss);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pauseForFocusLoss();
+  });
+
   function finalizeGameOver() {
     state = "over";
     const finalScore = Math.floor(score);
@@ -1266,11 +1324,13 @@
     gameOverScreen.classList.remove("hidden");
     updateTouchControlsVisibility();
 
-    // impact feedback: colored flash + screen shake
+    // impact feedback: colored flash + screen shake (shake skipped under reduced-motion)
     flashScreen(isNewBest ? "gold" : "red");
-    canvasFrame.classList.remove("shake");
-    void canvasFrame.offsetWidth;
-    canvasFrame.classList.add("shake");
+    if (!prefersReducedMotion) {
+      canvasFrame.classList.remove("shake");
+      void canvasFrame.offsetWidth;
+      canvasFrame.classList.add("shake");
+    }
 
     render();
   }
