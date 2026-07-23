@@ -54,6 +54,8 @@
   const touchControls = document.getElementById("touch-controls");
   const touchJumpBtn = document.getElementById("touch-jump");
   const touchDuckBtn = document.getElementById("touch-duck");
+  const mowItemEl = document.getElementById("mow-item");
+  const mowTimerEl = document.getElementById("mow-timer");
 
   const HIGH_SCORE_KEY = "dashRunnerHighScore";
   const MUTE_KEY = "dashRunnerMuted";
@@ -100,6 +102,11 @@
   const NEAR_MISS_MARGIN = 18; // px gap under/over an obstacle that still counts as "close"
   const NEAR_MISS_SCORE = 15;
   const HITSTOP_DURATION = 0.08;
+
+  const MOW_MODE_DURATION = 6; // seconds the lawnmower power-up stays active
+  const MOW_BONUS_SCORE = 20; // per ground obstacle mowed down (scaled by combo, like coins)
+  const POWERUP_RADIUS = 12;
+  const POWERUP_SPAWN_RANGE = [22, 34]; // seconds between mower pickups
 
   const isTouchDevice = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
   if (isTouchDevice) touchControls.classList.add("enabled");
@@ -374,6 +381,11 @@
       },
       comboBreak() { tone({ freq: 220, glideTo: 140, duration: 0.18, type: "sine", gain: 0.14 }); },
       nearMiss() { tone({ freq: 1100, duration: 0.06, type: "triangle", gain: 0.12 }); },
+      mowStart() {
+        tone({ freq: 200, duration: 0.15, type: "sawtooth", gain: 0.18 });
+        tone({ freq: 260, duration: 0.15, type: "sawtooth", gain: 0.14, delay: 0.08 });
+      },
+      mowChunk() { tone({ freq: 150, duration: 0.05, type: "square", gain: 0.08 }); },
       stageUp() { tone({ freq: 520, glideTo: 1040, duration: 0.25, type: "triangle", gain: 0.15 }); },
       newBest() {
         tone({ freq: 660, duration: 0.1, type: "sine", gain: 0.18 });
@@ -399,10 +411,11 @@
 
   let state = "ready"; // ready | playing | paused | hitstop | over
 
-  let player, obstacles, coins, particles, floatingTexts;
+  let player, obstacles, coins, powerups, particles, floatingTexts;
   let speed, elapsed, score, coinsCollected, nearMissCount;
   let combo, comboMultiplier, maxComboMultiplier;
   let spawnTimer, nextSpawnIn, coinTimer, nextCoinIn, breatherTimer, nextBreatherThreshold;
+  let powerupTimer, nextPowerupIn, mowModeTimer;
   let groundOffset, farOffset, midOffset, stars, lastTime;
   let stageIndex, hitstopTimer, bestAtRunStart, bestBeatCelebrated;
 
@@ -422,6 +435,7 @@
     };
     obstacles = [];
     coins = [];
+    powerups = [];
     particles = [];
     floatingTexts = [];
     speed = BASE_SPEED;
@@ -438,6 +452,9 @@
     nextCoinIn = randRange(1.4, 2.4);
     breatherTimer = 0;
     nextBreatherThreshold = randRange(8, 13);
+    powerupTimer = 0;
+    nextPowerupIn = randRange(POWERUP_SPAWN_RANGE[0], POWERUP_SPAWN_RANGE[1]);
+    mowModeTimer = 0;
     groundOffset = 0;
     farOffset = 0;
     midOffset = 0;
@@ -472,6 +489,8 @@
     comboEl.textContent = `×${comboMultiplier}`;
     comboEl.classList.toggle("combo-hot", comboMultiplier >= 3);
     stageEl.textContent = stageIndex + 1;
+    mowItemEl.classList.toggle("hidden", mowModeTimer <= 0);
+    if (mowModeTimer > 0) mowTimerEl.textContent = `${mowModeTimer.toFixed(1)}s`;
   }
 
   function pulseHud(el, extraClass) {
@@ -621,6 +640,11 @@
       ? GROUND_Y - STAND_HEIGHT - randRange(45, 95) // needs a jump to reach
       : GROUND_Y - randRange(16, 26); // grabbed while running
     coins.push({ x: W + 10, y, r: COIN_RADIUS, phase: Math.random() * Math.PI * 2, missed: false });
+  }
+
+  function spawnPowerup() {
+    const y = GROUND_Y - randRange(16, 26); // ground-level lane, grabbed while running
+    powerups.push({ x: W + 10, y, r: POWERUP_RADIUS, phase: Math.random() * Math.PI * 2 });
   }
 
   function rectsOverlap(a, b) {
@@ -785,6 +809,8 @@
     player.squash = Math.max(0, player.squash - dt * 5);
     player.tilt = player.onGround ? 0 : Math.max(-0.35, Math.min(0.35, player.vy / 1800));
 
+    if (mowModeTimer > 0) mowModeTimer = Math.max(0, mowModeTimer - dt);
+
     // spawn obstacles
     spawnTimer += dt;
     if (stage.breather) breatherTimer += dt;
@@ -811,6 +837,14 @@
         nextCoinIn = randRange(1.3, 2.2);
         spawnCoin();
       }
+    }
+
+    // spawn mower power-ups
+    powerupTimer += dt;
+    if (powerupTimer >= nextPowerupIn) {
+      powerupTimer = 0;
+      nextPowerupIn = randRange(POWERUP_SPAWN_RANGE[0], POWERUP_SPAWN_RANGE[1]);
+      spawnPowerup();
     }
 
     // move + collide + cull obstacles
@@ -845,6 +879,10 @@
           if (gap < NEAR_MISS_MARGIN) o.nearMiss = true;
         }
         if (rectsOverlap(playerBox, obstacleBox)) {
+          if (mowModeTimer > 0 && o.type === "ground") {
+            mowObstacle(o, i);
+            continue;
+          }
           triggerCollision(o);
           return;
         }
@@ -906,6 +944,33 @@
       if (c.x + c.r < -10) coins.splice(i, 1);
     }
 
+    // move + collide + cull mower power-ups
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      const p = powerups[i];
+      p.x -= speed * dt;
+      p.phase += dt * 6;
+
+      if (circleRectOverlap(p.x, p.y, p.r, playerBox)) {
+        powerups.splice(i, 1);
+        mowModeTimer = MOW_MODE_DURATION;
+        Sound.mowStart();
+        vibrate([10, 30, 10]);
+        addFloatingText(p.x, p.y - 10, "Mow Mode!", "#4ade80", true);
+        spawnParticles(p.x, p.y, 14, {
+          color: "#4ade80",
+          life: 0.5,
+          speedMin: 60,
+          speedMax: 200,
+          gravity: 150,
+          sizeMin: 2,
+          sizeMax: 4,
+        });
+        continue;
+      }
+
+      if (p.x + p.r < -10) powerups.splice(i, 1);
+    }
+
     updateParticles(dt);
 
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
@@ -916,10 +981,32 @@
     }
   }
 
+  function mowObstacle(obstacle, index) {
+    obstacles.splice(index, 1);
+    const gained = MOW_BONUS_SCORE * comboMultiplier;
+    score += gained;
+    Sound.mowChunk();
+    vibrate(6);
+    const cx = obstacle.x + obstacle.width / 2;
+    const cy = obstacle.y + obstacle.height / 2;
+    addFloatingText(cx, obstacle.y - 6, `+${gained}`, "#4ade80");
+    spawnParticles(cx, cy, 10, {
+      color: "#86efac",
+      life: 0.4,
+      speedMin: 60,
+      speedMax: 160,
+      gravity: 350,
+      sizeMin: 2,
+      sizeMax: 4,
+    });
+  }
+
   function triggerCollision(obstacle) {
     player.vy = 0;
     state = "hitstop";
     hitstopTimer = HITSTOP_DURATION;
+    mowModeTimer = 0;
+    updateHud();
     const cx = obstacle.x + obstacle.width / 2;
     const cy = obstacle.y + obstacle.height / 2;
     spawnParticles(cx, cy, 22, {
@@ -1017,7 +1104,7 @@
     ctx.scale(squashX, stretch * squashY);
     ctx.translate(-cx, -cy);
 
-    ctx.fillStyle = comboMultiplier >= 3 ? "#facc15" : player.ducking ? "#f472b6" : "#5eead4";
+    ctx.fillStyle = mowModeTimer > 0 ? "#4ade80" : comboMultiplier >= 3 ? "#facc15" : player.ducking ? "#f472b6" : "#5eead4";
     roundRect(ctx, x, y, width, height, r);
     ctx.fill();
 
@@ -1111,6 +1198,37 @@
     }
   }
 
+  function drawPowerups() {
+    for (const p of powerups) {
+      const bob = Math.sin(p.phase) * 3;
+      const cy = p.y + bob;
+      ctx.save();
+      ctx.translate(p.x, cy);
+
+      ctx.fillStyle = "#14532d";
+      ctx.beginPath();
+      ctx.arc(-p.r * 0.55, p.r * 0.55, 3.5, 0, Math.PI * 2);
+      ctx.arc(p.r * 0.55, p.r * 0.55, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      const grad = ctx.createLinearGradient(0, -p.r, 0, p.r);
+      grad.addColorStop(0, "#4ade80");
+      grad.addColorStop(1, "#16a34a");
+      ctx.fillStyle = grad;
+      roundRect(ctx, -p.r, -p.r * 0.7, p.r * 2, p.r * 1.2, 4);
+      ctx.fill();
+
+      ctx.strokeStyle = "#166534";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(p.r * 0.6, -p.r * 0.3);
+      ctx.lineTo(p.r * 1.5, -p.r * 1.4);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+
   function drawFloatingTexts() {
     ctx.textAlign = "center";
     for (const f of floatingTexts) {
@@ -1136,6 +1254,7 @@
   function render() {
     drawBackground();
     drawCoins();
+    drawPowerups();
     drawObstacles();
     drawPlayer();
     drawParticles();
